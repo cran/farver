@@ -13,9 +13,10 @@ encoded in the rows and the different colour space values in the columns. For
 all colourspaces except \code{'cmyk'} this will mean a matrix with three columns -
 for \code{'cmyk'} it means four columns.}
 
-\item{from, to}{The input and output colour space. Allowed values are: "cmy",
-"cmyk", "hsl", "hsb", "hsv", "lab", "hunterlab", "lch", "luv", "rgb", "xyz",
-"yxy"}
+\item{from, to}{The input and output colour space. Allowed values are: \code{"cmy"},
+\code{"cmyk"}, \code{"hsl"}, \code{"hsb"}, \code{"hsv"}, \code{"lab"} (CIE L*ab), \code{"hunterlab"}
+(Hunter Lab), \code{"lch"} (CIE Lch(ab) / polarLAB), \code{"luv"}, \code{"rgb"} (sRGB),
+\code{"xyz"}, \code{"yxy"} (CIE xyY), or \code{"hcl"} (CIE Lch(uv) / polarLuv)}
 
 \item{white_from, white_to}{The white reference of the from and to colour
 space. Will only have an effect for relative colour spaces such as Lab and
@@ -39,9 +40,24 @@ This function and \code{\link[=convertColor]{convertColor()}} are not
 numerically equivalent due to rounding errors, but for all intend and purpose
 they give the same results.
 }
+\section{Handling of non-finite and out of bounds values}{
+
+\code{NA}, \code{NaN}, \code{-Inf}, and \code{Inf} are treated as invalid input and will result
+in \code{NA} values for the colour. If a given colourspace has finite bounds in
+some of their channels, the input will be capped before conversion, and the
+output will be capped before returning, so that both input and output colours
+are valid colours in their respective space. This means that converting back
+and forth between two colourspaces may result in a change in the colour if
+the gamut of one of the spaces is less than the other.
+}
+
 \examples{
-spectrum <- t(col2rgb(rainbow(10)))
-convert_colour(spectrum, 'rgb', 'lab')
+spectrum <- decode_colour(rainbow(10))
+spec_lab <- convert_colour(spectrum, 'rgb', 'lab')
+spec_lab
+
+# Convert between different white references
+convert_colour(spec_lab, 'lab', 'lab', white_from = 'D65', white_to = 'F10')
 
 }
 \seealso{

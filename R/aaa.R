@@ -10,7 +10,8 @@ colourspaces <- c(
   "luv",       # 8
   "rgb",       # 9
   "xyz",       # 10
-  "yxy"        # 11
+  "yxy",       # 11
+  "hcl"        # 11
 )
 colour_dims <- list(
   cmy = c('c', 'm', 'y'),
@@ -24,7 +25,23 @@ colour_dims <- list(
   luv = c('l', 'u', 'v'),
   rgb = c('r', 'g', 'b'),
   xyz = c('x', 'y', 'z'),
-  yxy = c('y1', 'x', 'y2')
+  yxy = c('y1', 'x', 'y2'),
+  hcl = c('h', 'c', 'l')
+)
+colour_channel_index <- list(
+  cmy = c('c' = 1L, 'm' = 2L, 'y' = 3L),
+  cmyk = c('c' = 1L, 'm' = 2L, 'y' = 3L, 'k' = 4L),
+  hsl = c('h' = 1L, 's' = 2L, 'l' = 3L),
+  hsb = c('h' = 1L, 's' = 2L, 'b' = 3L),
+  hsv = c('h' = 1L, 's' = 2L, 'v' = 3L),
+  lab = c('l' = 1L, 'a' = 2L, 'b' = 3L),
+  hunterlab = c('l' = 1L, 'a' = 2L, 'b' = 3L),
+  lch = c('l' = 1L, 'c' = 2L, 'h' = 3L),
+  luv = c('l' = 1L, 'u' = 2L, 'v' = 3L),
+  rgb = c('r' = 1L, 'g' = 2L, 'b' = 3L),
+  xyz = c('x' = 1L, 'y' = 2L, 'z' = 3L),
+  yxy = c('y1' = 1L, 'x' = 2L, 'y2' = 3L),
+  hcl = c('h' = 1L, 'c' = 2L, 'l' = 3L)
 )
 distances <- c(
   "euclidean",
@@ -33,18 +50,31 @@ distances <- c(
   "cie2000",
   "cmc"
 )
+operations <- c(
+  "set",
+  "add",
+  "multiply",
+  "least",
+  "most"
+)
 
-colourspace_match <- function(colour){
-  m <- pmatch( tolower(colour), colourspaces )
-  if( is.na(m) ) stop("Unknown colour space")
+colourspace_match <- function(colour) {
+  m <- pmatch(tolower(colour), colourspaces)
+  if (is.na(m)) stop("Unknown colour space", call. = FALSE)
   m
 }
 
 distance_match <- function(dist) {
-  m <- pmatch( match.arg(tolower(dist), distances), distances)
-  if( is.na(m) ) stop("Unknown distance measure")
+  m <- pmatch(match.arg(tolower(dist), distances), distances)
+  if (is.na(m)) stop("Unknown distance measure", call. = FALSE)
   m
 }
+operation_match <- function(op) {
+  m <- pmatch(match.arg(tolower(op), operations), operations)
+  if (is.na(m)) stop("Unknown operation", call. = FALSE)
+  m
+}
+
 white_references <- list(
   "2" = list(
     A = c(0.44757, 0.40745),
@@ -106,6 +136,8 @@ white_references <- list(
 #' 
 #' @return A 3-length vector with tristimulus values
 #' 
+#' @keywords internal
+#' 
 #' @export
 #' 
 #' @examples 
@@ -119,7 +151,8 @@ as_white_ref <- function(x, fow = 2) {
     x <- white_references[[as.character(fow)]][[toupper(x)]]
     if (is.null(x)) stop('Unknown white reference', call. = FALSE)
   }
-  stopifnot(is.numeric(x))
+  if (is.integer(x)) x <- as.numeric(x)
+  if (!is.numeric(x)) stop('White reference must be a numeric vector', call. = FALSE)
   if (length(x) == 2) {
     tmp <- 100/x[2]
     x <- c(
@@ -135,4 +168,17 @@ as_white_ref <- function(x, fow = 2) {
     stop('White reference must be of length 2 (chromaticity) or 3 (tristimulus)', call. = FALSE)
   }
   structure(x, names = c('X', 'Y', 'Z'))
+}
+
+load_colour_names <- function() {
+  .Call('load_colour_names_c', all_colours, all_values, PACKAGE = 'farver')
+  invisible()
+}
+
+as_character <- function(x) {
+  if (is.character(x)) return(x)
+  n <- names(x)
+  x <- as.character(x)
+  names(x) <- n
+  x
 }

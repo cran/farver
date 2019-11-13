@@ -1,3 +1,3 @@
 #' @useDynLib farver
-#' @import Rcpp
+#' @keywords internal
 '_PACKAGE'

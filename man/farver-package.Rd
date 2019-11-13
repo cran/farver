@@ -4,15 +4,17 @@
 \name{farver-package}
 \alias{farver}
 \alias{farver-package}
-\title{farver: Vectorised Colour Conversion and Comparison}
+\title{farver: High Performance Colour Space Manipulation}
 \description{
+\if{html}{\figure{logo.png}{options: align='right'}}
+
 The encoding of colour can be handled in many different ways, using
     different colour spaces. As different colour spaces have different uses,
     efficient conversion between these representations are important. The 
     'farver' package provides a set of functions that gives access to very fast
     colour space conversion and comparisons implemented in C++, and offers 
-    100-fold speed improvements over the 'convertColor' function in the 
-    'grDevices' package.
+    speed improvements over the 'convertColor' function in the 'grDevices' 
+    package.
 }
 \seealso{
 Useful links:
@@ -23,7 +25,7 @@ Useful links:
 
 }
 \author{
-\strong{Maintainer}: Thomas Lin Pedersen \email{thomasp85@gmail.com}
+\strong{Maintainer}: Thomas Lin Pedersen \email{thomasp85@gmail.com} (0000-0002-5147-4711)
 
 Authors:
 \itemize{
@@ -32,3 +34,4 @@ Authors:
 }
 
 }
+\keyword{internal}
