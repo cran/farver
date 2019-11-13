@@ -1,3 +1,8 @@
+# farver 2.0.1
+
+* Fixed symbol remapping issues on Solaris
+* UPPER and Title case for colour names are now supported alongside lower case
+
 # farver 2.0.0
 
 * Added a `NEWS.md` file to track changes to the package.
