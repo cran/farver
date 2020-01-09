@@ -14,7 +14,7 @@ SEXP convert_dispatch_impl(SEXP colour, SEXP white_from, SEXP white_to) {
   int ncol = dimension<Space_From>();
   // check that the dimensions of the input match the colour space
   if (ncol > Rf_ncols(colour)) {
-    Rf_error("colourspace requires %d values", ncol);    
+    Rf_errorcall(R_NilValue, "colourspace requires %d values", ncol);    
   }
   int ncol_out = dimension<Space_To>();
   
@@ -142,10 +142,10 @@ SEXP compare_dispatch_impl(SEXP from, SEXP to, int dist, bool sym, SEXP white_fr
   
   // check that the dimensions of the input match the colour space
   if (from_col > Rf_ncols(from)) {
-    Rf_error("colourspace requires %d values", from_col);    
+    Rf_errorcall(R_NilValue, "colourspace requires %d values", from_col);    
   }
   if (to_col > Rf_ncols(to)) {
-    Rf_error("colourspace requires %d values", to_col);    
+    Rf_errorcall(R_NilValue, "colourspace requires %d values", to_col);    
   }
   double wf1 = REAL(white_from)[0];
   double wf2 = REAL(white_from)[1];
@@ -160,9 +160,9 @@ SEXP compare_dispatch_impl(SEXP from, SEXP to, int dist, bool sym, SEXP white_fr
   int noffset3 = noffset2 + n;
   int noffset4 = noffset3 + n;
   int moffset1 = 0;
-  int moffset2 = moffset1 + n;
-  int moffset3 = moffset2 + n;
-  int moffset4 = moffset3 + n;
+  int moffset2 = moffset1 + m;
+  int moffset3 = moffset2 + m;
+  int moffset4 = moffset3 + m;
   double* from_d = NULL;
   double* to_d = NULL;
   int* from_i = NULL;
