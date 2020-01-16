@@ -32,6 +32,14 @@ inline int hex2int(const int x) {
 }
 inline std::string prepare_code(const char* col) {
   std::string code(col);
+  if (isdigit(col[0])) {
+    int col_num = atoi(col);
+    if (col_num == 0) {
+      code = "0";
+    } else {
+      code = std::to_string(((col_num - 1) % 8) + 1);
+    }
+  }
   // Remove whitespace
   code.erase(std::remove(code.begin(), code.end(), ' '), code.end());
   std::transform(code.begin(), code.end(), code.begin(),
@@ -326,6 +334,7 @@ SEXP load_colour_names_c(SEXP name, SEXP value) {
     col.r = values[it++];
     col.g = values[it++];
     col.b = values[it++];
+    col.a = values[it++];
     named_colours[colour_name] = col;
   }
   return R_NilValue;
@@ -357,7 +366,7 @@ SEXP decode_impl(SEXP codes, SEXP alpha, SEXP white, SEXP na) {
   bool has_alpha;
   for (int i = 0; i < n; ++i) {
     SEXP code = STRING_ELT(codes, i);
-    if (code == R_NaString) {
+    if (code == R_NaString || strcmp("NA", CHAR(code)) == 0) {
       if (na_is_na) {
         colours_p[offset1 + i] = R_NaReal;
         colours_p[offset2 + i] = R_NaReal;
@@ -398,7 +407,7 @@ SEXP decode_impl(SEXP codes, SEXP alpha, SEXP white, SEXP na) {
         rgb.r = it->second.r;
         rgb.g = it->second.g;
         rgb.b = it->second.b;
-        a = 1.0;
+        a = it->second.a;
       }
     }
     ColorSpace::IConverter<To>::ToColorSpace(&rgb, &to);
@@ -441,7 +450,7 @@ SEXP decode_impl<ColorSpace::Rgb>(SEXP codes, SEXP alpha, SEXP white, SEXP na) {
   bool has_alpha;
   for (int i = 0; i < n; ++i) {
     SEXP code = STRING_ELT(codes, i);
-    if (code == R_NaString) {
+    if (code == R_NaString || strcmp("NA", CHAR(code)) == 0) {
       if (na_is_na) {
         if (get_alpha) {
           colours_d[offset1 + i] = R_NaReal;
@@ -492,7 +501,7 @@ SEXP decode_impl<ColorSpace::Rgb>(SEXP codes, SEXP alpha, SEXP white, SEXP na) {
         r = it->second.r;
         g = it->second.g;
         b = it->second.b;
-        a = 1.0;
+        a = it->second.a;
       }
     }
     if (get_alpha) {
@@ -534,7 +543,7 @@ SEXP decode_c(SEXP codes, SEXP alpha, SEXP to, SEXP white, SEXP na) {
 }
 
 template <typename Space>
-SEXP encode_channel_impl(SEXP codes, SEXP channel, SEXP value, SEXP op, SEXP white) {
+SEXP encode_channel_impl(SEXP codes, SEXP channel, SEXP value, SEXP op, SEXP white, SEXP na) {
   int chan = INTEGER(channel)[0];
   int operation = INTEGER(op)[0];
   int n = Rf_length(codes);
@@ -553,6 +562,9 @@ SEXP encode_channel_impl(SEXP codes, SEXP channel, SEXP value, SEXP op, SEXP whi
     first_value_d = value_d[0];
   }
   
+  SEXP na_code = STRING_ELT(na, 0);
+  bool na_is_na = na_code == R_NaString;
+  
   SEXP ret = PROTECT(Rf_allocVector(STRSXP, n));
   ColorSpace::Rgb rgb;
   ColorSpace::XyzConverter::SetWhiteReference(REAL(white)[0], REAL(white)[1], REAL(white)[2]);
@@ -562,8 +574,14 @@ SEXP encode_channel_impl(SEXP codes, SEXP channel, SEXP value, SEXP op, SEXP whi
   
   for (int i = 0; i < n; ++i) {
     SEXP code = STRING_ELT(codes, i);
-    if (code == R_NaString ||
-        (value_is_int && (one_value ? first_value_i : value_i[i]) == R_NaInt) ||
+    if (code == R_NaString || strcmp("NA", CHAR(code)) == 0) {
+      if (na_is_na) {
+        SET_STRING_ELT(ret, i, R_NaString);
+        continue;
+      }
+      code = na_code;
+    } 
+    if ((value_is_int && (one_value ? first_value_i : value_i[i]) == R_NaInt) ||
         (!value_is_int && !R_finite(one_value ? first_value_d : value_d[i]))) {
       SET_STRING_ELT(ret, i, R_NaString);
       continue;
@@ -589,6 +607,10 @@ SEXP encode_channel_impl(SEXP codes, SEXP channel, SEXP value, SEXP op, SEXP whi
       rgb.g = it->second.g;
       rgb.b = it->second.b;
       strcpy(buffera, buffer);
+      if (it->second.a == 0) {
+        buffera[7] = '0';
+        buffera[8] = '0';
+      }
     }
     ColorSpace::IConverter<Space>::ToColorSpace(&rgb, &colour);
     if (value_is_int) {
@@ -623,7 +645,7 @@ SEXP encode_channel_impl(SEXP codes, SEXP channel, SEXP value, SEXP op, SEXP whi
 }
 
 template <>
-SEXP encode_channel_impl<ColorSpace::Rgb>(SEXP codes, SEXP channel, SEXP value, SEXP op, SEXP white) {
+SEXP encode_channel_impl<ColorSpace::Rgb>(SEXP codes, SEXP channel, SEXP value, SEXP op, SEXP white, SEXP na) {
   int chan = INTEGER(channel)[0];
   int operation = INTEGER(op)[0];
   int n = Rf_length(codes);
@@ -642,6 +664,9 @@ SEXP encode_channel_impl<ColorSpace::Rgb>(SEXP codes, SEXP channel, SEXP value, 
     first_value_d = value_d[0];
   }
   
+  SEXP na_code = STRING_ELT(na, 0);
+  bool na_is_na = na_code == R_NaString;
+  
   SEXP ret = PROTECT(Rf_allocVector(STRSXP, n));
   int num, nchar;
   double new_val;
@@ -649,8 +674,14 @@ SEXP encode_channel_impl<ColorSpace::Rgb>(SEXP codes, SEXP channel, SEXP value, 
   
   for (int i = 0; i < n; ++i) {
     SEXP code = STRING_ELT(codes, i);
-    if (code == R_NaString ||
-        (value_is_int && (one_value ? first_value_i : value_i[i]) == R_NaInt) ||
+    if (code == R_NaString || strcmp("NA", CHAR(code)) == 0) {
+      if (na_is_na) {
+        SET_STRING_ELT(ret, i, R_NaString);
+        continue;
+      }
+      code = na_code;
+    } 
+    if ((value_is_int && (one_value ? first_value_i : value_i[i]) == R_NaInt) ||
         (!value_is_int && !R_finite(one_value ? first_value_d : value_d[i]))) {
       SET_STRING_ELT(ret, i, R_NaString);
       continue;
@@ -680,7 +711,15 @@ SEXP encode_channel_impl<ColorSpace::Rgb>(SEXP codes, SEXP channel, SEXP value, 
       num = cap0255(it->second.b) * 2;
       buffera[5] = hex8[num];
       buffera[6] = hex8[num + 1];
-      buffera[7] = '\0';
+      
+      if (it->second.a == 1) {
+        buffera[7] = '\0';
+      } else {
+        num = cap0255(it->second.a * 255) * 2;
+        buffera[7] = hex8[num];
+        buffera[8] = hex8[num + 1];
+      }
+      
     }
     switch (chan) {
     case 1: 
@@ -711,7 +750,7 @@ SEXP encode_channel_impl<ColorSpace::Rgb>(SEXP codes, SEXP channel, SEXP value, 
   return ret;
 }
 
-SEXP encode_alpha_impl(SEXP codes, SEXP value, SEXP op) {
+SEXP encode_alpha_impl(SEXP codes, SEXP value, SEXP op, SEXP na) {
   int operation = INTEGER(op)[0];
   int n = Rf_length(codes);
   
@@ -729,15 +768,21 @@ SEXP encode_alpha_impl(SEXP codes, SEXP value, SEXP op) {
     first_value_d = value_d[0];
   }
   
+  SEXP na_code = STRING_ELT(na, 0);
+  bool na_is_na = na_code == R_NaString;
+  
   SEXP ret = PROTECT(Rf_allocVector(STRSXP, n));
   int alpha, num, nchar;
   ColourMap& named_colours = get_named_colours();
   
   for (int i = 0; i < n; ++i) {
     SEXP code = STRING_ELT(codes, i);
-    if (code == R_NaString) {
-      SET_STRING_ELT(ret, i, R_NaString);
-      continue;
+    if (code == R_NaString || strcmp("NA", CHAR(code)) == 0) {
+      if (na_is_na) {
+        SET_STRING_ELT(ret, i, R_NaString);
+        continue;
+      }
+      code = na_code;
     }
     
     const char* col = CHAR(code);
@@ -770,7 +815,8 @@ SEXP encode_alpha_impl(SEXP codes, SEXP value, SEXP op) {
       num = cap0255(it->second.b) * 2;
       buffera[5] = hex8[num];
       buffera[6] = hex8[num + 1];
-      alpha = 255;
+      
+      alpha = it->second.a * 255;
     }
     
     if (value_is_int) {
@@ -794,24 +840,24 @@ SEXP encode_alpha_impl(SEXP codes, SEXP value, SEXP op) {
   return ret;
 }
 
-SEXP encode_channel_c(SEXP codes, SEXP channel, SEXP value, SEXP space, SEXP op, SEXP white) {
+SEXP encode_channel_c(SEXP codes, SEXP channel, SEXP value, SEXP space, SEXP op, SEXP white, SEXP na) {
   if (INTEGER(channel)[0] == 0) {
-    return encode_alpha_impl(codes, value, op);
+    return encode_alpha_impl(codes, value, op, na);
   }
   switch (INTEGER(space)[0]) {
-    case CMY: return encode_channel_impl<ColorSpace::Cmy>(codes, channel, value, op, white);
-    case CMYK: return encode_channel_impl<ColorSpace::Cmyk>(codes, channel, value, op, white);
-    case HSL: return encode_channel_impl<ColorSpace::Hsl>(codes, channel, value, op, white);
-    case HSB: return encode_channel_impl<ColorSpace::Hsb>(codes, channel, value, op, white);
-    case HSV: return encode_channel_impl<ColorSpace::Hsv>(codes, channel, value, op, white);
-    case LAB: return encode_channel_impl<ColorSpace::Lab>(codes, channel, value, op, white);
-    case HUNTERLAB: return encode_channel_impl<ColorSpace::HunterLab>(codes, channel, value, op, white);
-    case LCH: return encode_channel_impl<ColorSpace::Lch>(codes, channel, value, op, white);
-    case LUV: return encode_channel_impl<ColorSpace::Luv>(codes, channel, value, op, white);
-    case RGB: return encode_channel_impl<ColorSpace::Rgb>(codes, channel, value, op, white);
-    case XYZ: return encode_channel_impl<ColorSpace::Xyz>(codes, channel, value, op, white);
-    case YXY: return encode_channel_impl<ColorSpace::Yxy>(codes, channel, value, op, white);
-    case HCL: return encode_channel_impl<ColorSpace::Hcl>(codes, channel, value, op, white);
+    case CMY: return encode_channel_impl<ColorSpace::Cmy>(codes, channel, value, op, white, na);
+    case CMYK: return encode_channel_impl<ColorSpace::Cmyk>(codes, channel, value, op, white, na);
+    case HSL: return encode_channel_impl<ColorSpace::Hsl>(codes, channel, value, op, white, na);
+    case HSB: return encode_channel_impl<ColorSpace::Hsb>(codes, channel, value, op, white, na);
+    case HSV: return encode_channel_impl<ColorSpace::Hsv>(codes, channel, value, op, white, na);
+    case LAB: return encode_channel_impl<ColorSpace::Lab>(codes, channel, value, op, white, na);
+    case HUNTERLAB: return encode_channel_impl<ColorSpace::HunterLab>(codes, channel, value, op, white, na);
+    case LCH: return encode_channel_impl<ColorSpace::Lch>(codes, channel, value, op, white, na);
+    case LUV: return encode_channel_impl<ColorSpace::Luv>(codes, channel, value, op, white, na);
+    case RGB: return encode_channel_impl<ColorSpace::Rgb>(codes, channel, value, op, white, na);
+    case XYZ: return encode_channel_impl<ColorSpace::Xyz>(codes, channel, value, op, white, na);
+    case YXY: return encode_channel_impl<ColorSpace::Yxy>(codes, channel, value, op, white, na);
+    case HCL: return encode_channel_impl<ColorSpace::Hcl>(codes, channel, value, op, white, na);
   }
   
   // never happens
@@ -819,7 +865,7 @@ SEXP encode_channel_c(SEXP codes, SEXP channel, SEXP value, SEXP space, SEXP op,
 }
 
 template <typename Space>
-SEXP decode_channel_impl(SEXP codes, SEXP channel, SEXP white) {
+SEXP decode_channel_impl(SEXP codes, SEXP channel, SEXP white, SEXP na) {
   int chan = INTEGER(channel)[0];
   int n = Rf_length(codes);
   
@@ -831,11 +877,17 @@ SEXP decode_channel_impl(SEXP codes, SEXP channel, SEXP white) {
   ColourMap& named_colours = get_named_colours();
   int nchar;
   
+  SEXP na_code = STRING_ELT(na, 0);
+  bool na_is_na = na_code == R_NaString;
+  
   for (int i = 0; i < n; ++i) {
     SEXP code = STRING_ELT(codes, i);
-    if (code == R_NaString) {
-      ret_p[i] = R_NaReal;
-      continue;
+    if (code == R_NaString || strcmp("NA", CHAR(code)) == 0) {
+      if (na_is_na) {
+        ret_p[i] = R_NaReal;
+        continue;
+      }
+      code = na_code;
     }
     const char* col = CHAR(code);
     if (col[0] == '#') {
@@ -869,7 +921,7 @@ SEXP decode_channel_impl(SEXP codes, SEXP channel, SEXP white) {
 }
 
 template <>
-SEXP decode_channel_impl<ColorSpace::Rgb>(SEXP codes, SEXP channel, SEXP white) {
+SEXP decode_channel_impl<ColorSpace::Rgb>(SEXP codes, SEXP channel, SEXP white, SEXP na) {
   int chan = INTEGER(channel)[0];
   int n = Rf_length(codes);
   
@@ -879,11 +931,17 @@ SEXP decode_channel_impl<ColorSpace::Rgb>(SEXP codes, SEXP channel, SEXP white) 
   int val = 0;
   int nchar = 0;
   
+  SEXP na_code = STRING_ELT(na, 0);
+  bool na_is_na = na_code == R_NaString;
+  
   for (int i = 0; i < n; ++i) {
     SEXP code = STRING_ELT(codes, i);
-    if (code == R_NaString) {
-      ret_p[i] = R_NaInt;
-      continue;
+    if (code == R_NaString || strcmp("NA", CHAR(code)) == 0) {
+      if (na_is_na) {
+        ret_p[i] = R_NaInt;
+        continue;
+      }
+      code = na_code;
     }
     const char* col = CHAR(code);
     if (col[0] == '#') {
@@ -930,7 +988,7 @@ SEXP decode_channel_impl<ColorSpace::Rgb>(SEXP codes, SEXP channel, SEXP white) 
   return ret;
 }
 
-SEXP decode_alpha_impl(SEXP codes) {
+SEXP decode_alpha_impl(SEXP codes, SEXP na) {
   int n = Rf_length(codes);
   
   SEXP ret = PROTECT(Rf_allocVector(REALSXP, n));
@@ -940,11 +998,17 @@ SEXP decode_alpha_impl(SEXP codes) {
   bool has_alpha;
   double val;
   
+  SEXP na_code = STRING_ELT(na, 0);
+  bool na_is_na = na_code == R_NaString;
+  
   for (int i = 0; i < n; ++i) {
     SEXP code = STRING_ELT(codes, i);
-    if (code == R_NaString) {
-      ret_p[i] = R_NaInt;
-      continue;
+    if (code == R_NaString || strcmp("NA", CHAR(code)) == 0) {
+      if (na_is_na) {
+        ret_p[i] = R_NaInt;
+        continue;
+      }
+      code = na_code;
     }
     const char* col = CHAR(code);
     if (col[0] == '#') {
@@ -965,7 +1029,7 @@ SEXP decode_alpha_impl(SEXP codes) {
         ret_p[i] = R_NaReal;
         continue;
       }
-      val = 1.0;
+      val = it->second.a;
     }
     
     ret_p[i] = val;
@@ -976,24 +1040,24 @@ SEXP decode_alpha_impl(SEXP codes) {
   return ret;
 }
 
-SEXP decode_channel_c(SEXP codes, SEXP channel, SEXP space, SEXP white) {
+SEXP decode_channel_c(SEXP codes, SEXP channel, SEXP space, SEXP white, SEXP na) {
   if (INTEGER(channel)[0] == 0) {
-    return decode_alpha_impl(codes);
+    return decode_alpha_impl(codes, na);
   }
   switch (INTEGER(space)[0]) {
-  case CMY: return decode_channel_impl<ColorSpace::Cmy>(codes, channel, white);
-  case CMYK: return decode_channel_impl<ColorSpace::Cmyk>(codes, channel, white);
-  case HSL: return decode_channel_impl<ColorSpace::Hsl>(codes, channel, white);
-  case HSB: return decode_channel_impl<ColorSpace::Hsb>(codes, channel, white);
-  case HSV: return decode_channel_impl<ColorSpace::Hsv>(codes, channel, white);
-  case LAB: return decode_channel_impl<ColorSpace::Lab>(codes, channel, white);
-  case HUNTERLAB: return decode_channel_impl<ColorSpace::HunterLab>(codes, channel, white);
-  case LCH: return decode_channel_impl<ColorSpace::Lch>(codes, channel, white);
-  case LUV: return decode_channel_impl<ColorSpace::Luv>(codes, channel, white);
-  case RGB: return decode_channel_impl<ColorSpace::Rgb>(codes, channel, white);
-  case XYZ: return decode_channel_impl<ColorSpace::Xyz>(codes, channel, white);
-  case YXY: return decode_channel_impl<ColorSpace::Yxy>(codes, channel, white);
-  case HCL: return decode_channel_impl<ColorSpace::Hcl>(codes, channel, white);
+  case CMY: return decode_channel_impl<ColorSpace::Cmy>(codes, channel, white, na);
+  case CMYK: return decode_channel_impl<ColorSpace::Cmyk>(codes, channel, white, na);
+  case HSL: return decode_channel_impl<ColorSpace::Hsl>(codes, channel, white, na);
+  case HSB: return decode_channel_impl<ColorSpace::Hsb>(codes, channel, white, na);
+  case HSV: return decode_channel_impl<ColorSpace::Hsv>(codes, channel, white, na);
+  case LAB: return decode_channel_impl<ColorSpace::Lab>(codes, channel, white, na);
+  case HUNTERLAB: return decode_channel_impl<ColorSpace::HunterLab>(codes, channel, white, na);
+  case LCH: return decode_channel_impl<ColorSpace::Lch>(codes, channel, white, na);
+  case LUV: return decode_channel_impl<ColorSpace::Luv>(codes, channel, white, na);
+  case RGB: return decode_channel_impl<ColorSpace::Rgb>(codes, channel, white, na);
+  case XYZ: return decode_channel_impl<ColorSpace::Xyz>(codes, channel, white, na);
+  case YXY: return decode_channel_impl<ColorSpace::Yxy>(codes, channel, white, na);
+  case HCL: return decode_channel_impl<ColorSpace::Hcl>(codes, channel, white, na);
   }
   
   // never happens

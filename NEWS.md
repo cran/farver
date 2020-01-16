@@ -1,3 +1,13 @@
+# farver 2.0.3
+
+* Fixed a bug in colour comparison where the blue channel got ignored 
+  (#20, @krlmlr)
+* Allowing `"NA"` and `"transparent"` as valid colour names
+* How NA should be treated can now be set in all functions accepting colour 
+  names
+* farver now accepts legacy colour specifications as integers indexing into
+  `palette()` as well as integers represented as characters
+
 # farver 2.0.2
 
 * Small adjustments to support super weird architectures (#15, #16)
@@ -5,7 +15,7 @@
 * Fixed a major bug in colour comparison
 * Colour names are now stripped of whitespace and converted to lower-case before
   conversion, making it behave like `col2rgb()`
-* A warning is now emitted if an unknown colour name is passed into any decoding
+* An error is now emitted if an unknown colour name is passed into any decoding
   function
 
 # farver 2.0.1

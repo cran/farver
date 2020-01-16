@@ -29,6 +29,7 @@ struct rgb_colour {
   int r;
   int g;
   int b;
+  int a;
 };
 typedef std::unordered_map<std::string, rgb_colour> ColourMap;
 
@@ -37,8 +38,8 @@ ColourMap& get_named_colours();
 
 SEXP encode_c(SEXP colour, SEXP alpha, SEXP from, SEXP white);
 SEXP decode_c(SEXP codes, SEXP alpha, SEXP to, SEXP white, SEXP na);
-SEXP encode_channel_c(SEXP codes, SEXP channel, SEXP value, SEXP space, SEXP op, SEXP white);
-SEXP decode_channel_c(SEXP codes, SEXP channel, SEXP space, SEXP white);
+SEXP encode_channel_c(SEXP codes, SEXP channel, SEXP value, SEXP space, SEXP op, SEXP white, SEXP na);
+SEXP decode_channel_c(SEXP codes, SEXP channel, SEXP space, SEXP white, SEXP na);
 SEXP load_colour_names_c(SEXP name, SEXP value);
 
 template <typename Space>
