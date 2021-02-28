@@ -5,6 +5,8 @@
 #include <string>
 #include <cctype>
 
+#include <R_ext/GraphicsEngine.h>
+
 static char hex8[] = "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F303132333435363738393A3B3C3D3E3F404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F606162636465666768696A6B6C6D6E6F707172737475767778797A7B7C7D7E7F808182838485868788898A8B8C8D8E8F909192939495969798999A9B9C9D9E9FA0A1A2A3A4A5A6A7A8A9AAABACADAEAFB0B1B2B3B4B5B6B7B8B9BABBBCBDBEBFC0C1C2C3C4C5C6C7C8C9CACBCCCDCECFD0D1D2D3D4D5D6D7D8D9DADBDCDDDEDFE0E1E2E3E4E5E6E7E8E9EAEBECEDEEEFF0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF";
 static char buffer[] = "#000000";
 static char buffera[] = "#00000000";
@@ -314,6 +316,8 @@ SEXP encode_c(SEXP colour, SEXP alpha, SEXP from, SEXP white) {
     case XYZ: return encode_impl<ColorSpace::Xyz>(colour, alpha, white);
     case YXY: return encode_impl<ColorSpace::Yxy>(colour, alpha, white);
     case HCL: return encode_impl<ColorSpace::Hcl>(colour, alpha, white);
+    case OKLAB: return encode_impl<ColorSpace::OkLab>(colour, alpha, white);
+    case OKLCH: return encode_impl<ColorSpace::OkLch>(colour, alpha, white);
   }
   
   // never happens
@@ -536,6 +540,8 @@ SEXP decode_c(SEXP codes, SEXP alpha, SEXP to, SEXP white, SEXP na) {
     case XYZ: return decode_impl<ColorSpace::Xyz>(codes, alpha, white, na);
     case YXY: return decode_impl<ColorSpace::Yxy>(codes, alpha, white, na);
     case HCL: return decode_impl<ColorSpace::Hcl>(codes, alpha, white, na);
+    case OKLAB: return decode_impl<ColorSpace::OkLab>(codes, alpha, white, na);
+    case OKLCH: return decode_impl<ColorSpace::OkLch>(codes, alpha, white, na);
   }
   
   // never happens
@@ -858,6 +864,8 @@ SEXP encode_channel_c(SEXP codes, SEXP channel, SEXP value, SEXP space, SEXP op,
     case XYZ: return encode_channel_impl<ColorSpace::Xyz>(codes, channel, value, op, white, na);
     case YXY: return encode_channel_impl<ColorSpace::Yxy>(codes, channel, value, op, white, na);
     case HCL: return encode_channel_impl<ColorSpace::Hcl>(codes, channel, value, op, white, na);
+    case OKLAB: return encode_channel_impl<ColorSpace::OkLab>(codes, channel, value, op, white, na);
+    case OKLCH: return encode_channel_impl<ColorSpace::OkLch>(codes, channel, value, op, white, na);
   }
   
   // never happens
@@ -1058,8 +1066,92 @@ SEXP decode_channel_c(SEXP codes, SEXP channel, SEXP space, SEXP white, SEXP na)
   case XYZ: return decode_channel_impl<ColorSpace::Xyz>(codes, channel, white, na);
   case YXY: return decode_channel_impl<ColorSpace::Yxy>(codes, channel, white, na);
   case HCL: return decode_channel_impl<ColorSpace::Hcl>(codes, channel, white, na);
+  case OKLAB: return decode_channel_impl<ColorSpace::OkLab>(codes, channel, white, na);
+  case OKLCH: return decode_channel_impl<ColorSpace::OkLch>(codes, channel, white, na);
   }
   
   // never happens
   return R_NilValue;
+}
+
+SEXP encode_native_c(SEXP color) {
+  int n = Rf_length(color);
+  ColourMap& named_colours = get_named_colours();
+  SEXP natives = PROTECT(Rf_allocVector(INTSXP, n));
+  int* natives_p = INTEGER(natives);
+  
+  int nchar;
+  bool has_alpha;
+  for (int i = 0; i < n; ++i) {
+    SEXP code = STRING_ELT(color, i);
+    if (code == R_NaString || strcmp("NA", CHAR(code)) == 0) {
+      natives_p[i] = NA_INTEGER;
+    }
+    const char* col = Rf_translateCharUTF8(code);
+    if (col[0] == '#') {
+      nchar = strlen(col);
+      has_alpha = nchar == 9;
+      if (!has_alpha && nchar != 7) {
+        Rf_errorcall(R_NilValue, "Malformed colour string `%s`. Must contain either 6 or 8 hex values", col);
+      }
+      natives_p[i] = R_RGBA(
+        hex2int(col[1]) * 16 + hex2int(col[2]),
+        hex2int(col[3]) * 16 + hex2int(col[4]),
+        hex2int(col[5]) * 16 + hex2int(col[6]),
+        has_alpha ? hex2int(col[7]) * 16 + hex2int(col[8]) : 255
+      );
+    } else {
+      ColourMap::iterator it = named_colours.find(prepare_code(col));
+      if (it == named_colours.end()) {
+        Rf_errorcall(R_NilValue, "Unknown colour name: %s", col);
+        natives_p[i] = NA_INTEGER;
+      } else {
+        natives_p[i] = R_RGB(it->second.r, it->second.g, it->second.b);
+      }
+    }
+  }
+  
+  copy_names(color, natives);
+  UNPROTECT(1);
+  return natives;
+}
+
+SEXP decode_native_c(SEXP native) {
+  int n = Rf_length(native);
+  SEXP codes = PROTECT(Rf_allocVector(STRSXP, n));
+  char* buf = buffera;
+  int* native_p = INTEGER(native);
+  int num;
+  
+  for (int i = 0; i < n; ++i) {
+    if (native_p[i] == R_NaInt) {
+      SET_STRING_ELT(codes, i, R_NaString);
+      continue;
+    }
+    num = R_RED(native_p[i]) * 2;
+    buf[1] = hex8[num];
+    buf[2] = hex8[num + 1];
+    
+    num = R_GREEN(native_p[i]) * 2;
+    buf[3] = hex8[num];
+    buf[4] = hex8[num + 1];
+    
+    num = R_BLUE(native_p[i]) * 2;
+    buf[5] = hex8[num];
+    buf[6] = hex8[num + 1];
+    
+    num = R_ALPHA(native_p[i]) * 2;
+    if (num == 510) { // opaque
+      buf[7] = '\0';
+    } else {
+      buf[7] = hex8[num];
+      buf[8] = hex8[num + 1];
+    }
+    
+    SET_STRING_ELT(codes, i, Rf_mkChar(buf));
+  }
+  
+  copy_names(native, codes);
+  UNPROTECT(1);
+  return codes;
 }
